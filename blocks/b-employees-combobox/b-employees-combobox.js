@@ -66,7 +66,13 @@ BEM.DOM.decl('b-employees-combobox', {
     },
 
     _showSuggest: function(scrollOff) {
-        this.elem('dropdown').fadeIn(200, !scrollOff && this._scrollToCurrent());
+
+        var _this = this;
+
+        this.elem('dropdown')
+            .fadeIn(200, function () {
+                !scrollOff && _this._scrollToCurrent();
+            });
     },
 
     _hideSuggest: function() {
@@ -87,6 +93,9 @@ BEM.DOM.decl('b-employees-combobox', {
 
         this.params.onSelect && this.params.onSelect(id);
 
+        // set hidden input
+        this.elem('value').val(id);
+
         BEM.DOM.update(this.elem('selected-items'), this.__self.getSelectedItemHtml(emp));
 
         this._hideSuggest();
@@ -95,6 +104,9 @@ BEM.DOM.decl('b-employees-combobox', {
     cancelSelected: function(id) {
 
         this.findElem('selected-item', 'id', id).slideUp(200, $.proxy(this._focus, this));
+
+        // unset hidden input
+        this.elem('value').val('');
     },
 
     _moveCursor: function(direction) {
@@ -139,7 +151,8 @@ BEM.DOM.decl('b-employees-combobox', {
     },
 
     _refreshSuggest: function() {
-        var matched = this._getMatchedEmployee(),
+        var _this = this,
+            matched = this._getMatchedEmployee(),
             count = 0,
             company;
 
@@ -157,7 +170,12 @@ BEM.DOM.decl('b-employees-combobox', {
         }
 
         BEM.DOM.update(this.elem('companies'), this.__self.getCompaniesHtml(matched, this._currentCompanyId));
-        BEM.DOM.update(this._suggest, this.__self.getSuggestHtml(company));
+        BEM.DOM.update(this._suggest, this.__self.getSuggestHtml(company, { name: this._val }));
+
+        window.setTimeout(function() {
+            _this._suggest.mCustomScrollbar();
+        }, 0);
+
     },
 
     _getMatchedEmployee: function() {
@@ -291,6 +309,7 @@ BEM.DOM.decl('b-employees-combobox', {
                 '<li class="' + cls + ' ' + cls + '_id_' + company.id + (cidCurrent == company.id ? ' ' + cls + '_select_yes' : '') + '">' +
                     '<span class="b-employees-combobox__company-matched">' + cnt + '</span>' +
                     '<span class="b-employees-combobox__company-name">' + company.name + '</span>' +
+                    '<i class="b-employees-combobox__arrow"></i>' +
                 '</li>';
         });
 
@@ -298,12 +317,12 @@ BEM.DOM.decl('b-employees-combobox', {
     },
 
     // TODO use templates
-    getSuggestHtml: function(company) {
+    getSuggestHtml: function(company, options) {
         var empCls = 'b-employees-combobox__employee';
 
         if (!company || !company.departments.length) return 'Нет совпадений';
 
-        var htmlBuf = '<ul class="b-employees-combobox__departments-list">';
+        var htmlBuf = '<ul class="b-employees-combobox__departments-list content">';
 
         $.each(company.departments, function(nd, dep) {
 
@@ -315,12 +334,24 @@ BEM.DOM.decl('b-employees-combobox', {
                         '<ul class="b-employees-combobox__employees-list">';
 
             $.each(dep.employees, function(ne, emp) {
+
+                var name = emp.fullName;
+
+                if (options.name) {
+                    name = name
+                        .split(options.name)
+                        .map(function (word, index) {
+                            return index == 0 ? word + '<strong>' + options.name + '</strong>' : word;
+                        })
+                        .join('');
+                }
+
                 htmlBuf +=
                     '<li class="' + empCls + ' ' + (ne === 0 && nd === 0 ? empCls + '_select_yes ' : '') + empCls + '_id_' + emp.id + '">' +
                         '<img src="' + emp.avatarUrl + '" height="32px" width="32px" />' +
                         '<div class="b-employees-combobox__employee-info">' +
-                            '<div class="b-employees-combobox__employee-name">' + emp.fullName + '</div>' +
-                            '<div class="b-employees-combobox__employee-pos">' + emp.position + '</div>' +
+                            '<div class="b-employees-combobox__employee-name">' + name + '</div>' +
+                            '<div class="b-employees-combobox__employee-pos" title="' + emp.position + '">' + emp.position + '</div>' +
                         '</div>'
                     '</li>';
             });
