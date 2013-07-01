@@ -4,6 +4,7 @@ BEM.DOM.decl('b-employees-combobox', {
 
         'js': function() {
             this._data = this.params.data;
+
             var employees = this._employees = [],
                 _this = this;
 
@@ -15,8 +16,15 @@ BEM.DOM.decl('b-employees-combobox', {
 
             this._input = this.elem('input');
             this._suggest = this.elem('suggest');
+
+            this._isMulti = this.hasMod('multi');
+
+            this._values = this._input.val().split(',').filter(function(val) { return !!val; });
+
             this._val = this._input.val();
+
             this._current = 0;
+
             this._currentCompanyId = this._data[0].id;
 
             this._preventHide = false;
@@ -35,7 +43,10 @@ BEM.DOM.decl('b-employees-combobox', {
                 .bindTo(this._input, 'keypress', function(e) {
                     if (e.keyCode == 13) {
                         _this.selectEmployee(_this.getMod(_this.findElem('employee', 'select', 'yes'), 'id'));
-                        _this._hideSuggest();
+
+//                        _this._hideSuggest();
+
+                        _this._isMulti && _this._input.focus();
                     }
                 })
 
@@ -53,6 +64,7 @@ BEM.DOM.decl('b-employees-combobox', {
                     }
                 });
 
+            // @todo зачем интервал здесь?
             setInterval(function() { _this.inputVal(_this._input.val()) }, 200);
 
             this._refreshSuggest();
@@ -62,14 +74,22 @@ BEM.DOM.decl('b-employees-combobox', {
 
     _scrollToCurrent: function(current) {
         current || (current = this.findElem('employee').eq(this._current));
+
         current.length && this._suggest.scrollTop(current.position().top + this._suggest.scrollTop() - 5);
+
+        current.length && this.__scroller.mCustomScrollbar("scrollTo", current.position().top + this._suggest.scrollTop() - 5);
     },
 
     _showSuggest: function(scrollOff) {
 
-        var _this = this;
+        var _this = this,
+            position = this.elem('item-input').position(),
+            height = this.elem('item-input').outerHeight(true);
+
+        this.setMod(this.elem('item-input'), 'selected', 'yes');
 
         this.elem('dropdown')
+            .css({ top: (position.top + height) + 'px' })
             .fadeIn(200, function () {
                 !scrollOff && _this._scrollToCurrent();
             });
@@ -78,35 +98,80 @@ BEM.DOM.decl('b-employees-combobox', {
     _hideSuggest: function() {
         if (this._preventHide) {
             this._preventHide = false;
-            this._focus();
+            this.elem('input').focus();
         } else {
+
+            this.setMod(this.elem('item-input'), 'selected', 'no');
+
             this.elem('dropdown').fadeOut(200);
         }
     },
 
     selectEmployee: function(id) {
-        if (!id) return;
+        if (!id) return false;
 
-        var emp = this._getEmployeeById(id);
+        var _this = this,
+            emp = this._getEmployeeById(id);
 
-        if (!emp) return;
+        if (!emp) return false;
+
+        if (this._isMulti) {
+            if (-1 === this._values.indexOf(id))
+                this._values.push(id);
+            else
+                return false;
+        } else {
+            this._values = [id];
+        }
+
+        this.elem('value').val(this._values.join(','));
 
         this.params.onSelect && this.params.onSelect(id);
 
-        // set hidden input
-        this.elem('value').val(id);
+        $(this.__self.getSelectedItemHtml(emp, {
+                isMulti: this._isMulti,
+                position: this._values.length
+            }))
+            .insertBefore(this.elem('item-input'));
 
-        BEM.DOM.update(this.elem('selected-items'), this.__self.getSelectedItemHtml(emp));
+        this._isMulti || this.elem('item-input').hide();
 
-        this._hideSuggest();
+        this._isMulti || this._hideSuggest();
+
+        this.trigger('change');
+
+        return true;
     },
+
+    removeEmployee: function(id) {
+
+        if (this._isMulti) {
+            this._values = this._values.filter(function (item) { return item != id });
+        } else {
+            this._values = [];
+        }
+
+        this.elem('value').val(this._values.join(','));
+
+        this.trigger('change');
+    },
+
 
     cancelSelected: function(id) {
 
-        this.findElem('selected-item', 'id', id).slideUp(200, $.proxy(this._focus, this));
+        var _this = this;
 
-        // unset hidden input
-        this.elem('value').val('');
+        this.removeEmployee(id);
+
+        this.findElem('selected-item', 'id', id).remove();
+
+        if (!this._isMulti) {
+            this.elem('item-input').show();
+        }
+
+        this._preventHide = true;
+
+        this.elem('input').focus();
     },
 
     _moveCursor: function(direction) {
@@ -123,7 +188,6 @@ BEM.DOM.decl('b-employees-combobox', {
 
         var next = items.eq(this._current);
         var nextDep = next.parent().parent();
-
         // поиск не схлопнутого отдела для активного пункта
         if (this.hasMod(nextDep, 'expand', 'off')) {
             var deps = $('.b-employees-combobox__department', nextDep.parent());
@@ -136,6 +200,7 @@ BEM.DOM.decl('b-employees-combobox', {
             } while (this.hasMod(deps.eq(counter), 'expand', 'off') && counter != nextDep.index())
 
             var nextDepChild = $('.b-employees-combobox__employees-list', deps.eq(counter)).children();
+
             next = direction == 'down' ? nextDepChild.first() : nextDepChild.last();
             for (var i = 0, l = items.length; i < l; i++) {
                 if (next[0] == items[i]) {
@@ -169,13 +234,18 @@ BEM.DOM.decl('b-employees-combobox', {
             }
         }
 
+        this._current = 0;
+
         BEM.DOM.update(this.elem('companies'), this.__self.getCompaniesHtml(matched, this._currentCompanyId));
-        BEM.DOM.update(this._suggest, this.__self.getSuggestHtml(company, { name: this._val }));
+        BEM.DOM.update(this._suggest, this.__self.getSuggestHtml(company, {
+            name: this._val,
+            employees: this._values,
+            isMulti: this._isMulti
+        }));
 
         window.setTimeout(function() {
-            _this._suggest.mCustomScrollbar();
+            _this.__scroller = _this._suggest.mCustomScrollbar();
         }, 0);
-
     },
 
     _getMatchedEmployee: function() {
@@ -198,6 +268,7 @@ BEM.DOM.decl('b-employees-combobox', {
                         matchFlag = false;
 
                     words.push(name);
+
                     words.forEach(function(w) {
                         w.indexOf(val) || (matchFlag = true)
                     });
@@ -252,12 +323,16 @@ BEM.DOM.decl('b-employees-combobox', {
         var input = this.elem('input')[0];
         if (input.createTextRange && !input.selectionStart) {
             var range = input.createTextRange();
-            range.move('character', input.value.length);
+            range.move('character', input.value.length)
             range.select();
         } else {
             input.focus();
         }
 
+    },
+
+    getSelectedItemId: function(node) {
+        return this.getMod($(node), 'id');
     }
 
 },
@@ -277,9 +352,11 @@ BEM.DOM.decl('b-employees-combobox', {
                    hasSelected = $('.b-employees-combobox__employee_select_yes', depDom).length;
 
                this.toggleMod(depDom, 'expand', 'on', 'off');
+
                $('.b-employees-combobox__employees-list', depDom).slideToggle(200, hasSelected && function() {
                    this._scrollToCurrent();
                }.bind(this));
+
                hasSelected && this._moveCursor('down');
            })
 
@@ -318,9 +395,17 @@ BEM.DOM.decl('b-employees-combobox', {
 
     // TODO use templates
     getSuggestHtml: function(company, options) {
+
         var empCls = 'b-employees-combobox__employee';
 
-        if (!company || !company.departments.length) return 'Нет совпадений';
+        if (!company || !company.departments.length) {
+            return '<div class="b-employees-combobox__not-found">' +
+                'По запросу ' +
+                '<span  class="b-employees-combobox__search-string">&laquo;' +
+                options.name + '&raquo;</span>' +
+                ' поиск не дал результатов' +
+                '</div>';
+        }
 
         var htmlBuf = '<ul class="b-employees-combobox__departments-list content">';
 
@@ -335,13 +420,34 @@ BEM.DOM.decl('b-employees-combobox', {
 
             $.each(dep.employees, function(ne, emp) {
 
+                if (options.employees && options.employees.indexOf(emp.id.toString()) !== -1) {
+                    return;
+                }
+
                 var name = emp.fullName;
 
                 if (options.name) {
+
+                    var optionsName = options.name.toLowerCase(),
+                        upperFirstLetters = function (text) {
+                        return text
+                            .split(' ')
+                            .map(function (word, index) {
+                                return word.substr(0, 1).toUpperCase() + word.substr(1);
+                            })
+                            .join(' ')
+                    };
+
                     name = name
-                        .split(options.name)
+                        .toLowerCase()
+                        .split(optionsName)
                         .map(function (word, index) {
-                            return index == 0 ? word + '<strong>' + options.name + '</strong>' : word;
+                            return index == 0 ?
+                                (word.length ?
+                                    upperFirstLetters(word) + '<strong>' + optionsName + '</strong>' :
+                                    '<strong>' + upperFirstLetters(optionsName) + '</strong>'
+                                ) :
+                                word;
                         })
                         .join('');
                 }
@@ -352,7 +458,7 @@ BEM.DOM.decl('b-employees-combobox', {
                         '<div class="b-employees-combobox__employee-info">' +
                             '<div class="b-employees-combobox__employee-name">' + name + '</div>' +
                             '<div class="b-employees-combobox__employee-pos" title="' + emp.position + '">' + emp.position + '</div>' +
-                        '</div>'
+                        '</div>' +
                     '</li>';
             });
             htmlBuf += '</ul></li>';
@@ -363,10 +469,20 @@ BEM.DOM.decl('b-employees-combobox', {
     },
 
     // TODO use templates
-    getSelectedItemHtml: function(employee) {
+    getSelectedItemHtml: function(employee, options) {
+
+        var name = employee.fullName;
+
+        if (options.isMulti) {
+            name = [
+                employee.name.substr(0, 1),
+                employee.surname
+            ].join('. ')
+        }
+
         return '<li class="b-employees-combobox__selected-item' + ' b-employees-combobox__selected-item_id_' + employee.id + '">' +
             '<img src="' + employee.avatarUrl + '" height="18px" width="18px" />' +
-            '<span class="b-employees-combobox__selected-item-name">' + employee.fullName + '</span>' +
+            '<span class="b-employees-combobox__selected-item-name">' + name + '</span>' +
             '<div class="b-employees-combobox__cancel-selected"></div>' +
         '</li>';
     }
